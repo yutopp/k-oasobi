@@ -13,15 +13,19 @@ module WHILE-SYNTAX
                      > "(" BExp ")"     [bracket]
 
        syntax Stmt ::= "skip"
-                     | "if" BExp "then" Stmt "else" Stmt  [strict(1)]
+                     | "if" BExp "then" Stmt "else" Stmt    [strict(1)]
                      | "while" BExp "do" Stmt
-                     | "begin" Dv Stmt "end"
+                     | "begin" Dv Dp Stmt "end"
+                     | "call" Id
                      | Id ":=" AExp     [strict(2)]
                      > Stmt ";" Stmt    [left, seqstrict]
                      > "(" Stmt ")"     [bracket]
 
        syntax VarDecl ::= "var" Id ":=" AExp ";"    [strict(2)]
        syntax Dv ::= List{VarDecl, ""}
+
+       syntax ProcDecl ::= "proc" Id "is" Stmt ";"
+       syntax Dp ::= List{ProcDecl, ""}
 endmodule
 
 module WHILE
@@ -38,6 +42,7 @@ module WHILE
            <store color="red"> .Map </store>
 
            <envp color="yellow"> .Map </envp>
+
            <nextLoc color="gray"> 0 </nextLoc>
        </T>
 
@@ -75,22 +80,39 @@ module WHILE
 
        rule while B:BExp do S:Stmt => if B then (S; while B do S) else skip      [structural]
 
-       syntax Stmt ::= envv(K) | envp(K)
-       rule <k> begin Ds S:Stmt end => Ds ~> S ~> envv(CurEnvV) ~> envp(CurEnvP) ... </k>
+       syntax KItem ::= envv(K) | envp(K)
+       rule <k> begin Dvs:Dv Dps:Dp S:Stmt end => Dvs ~> Dps ~> S ~> envv(CurEnvV) ~> envp(CurEnvP) ... </k>
             <envv> CurEnvV:Map </envv>
             <envp> CurEnvP:Map </envp>  [structural]
        rule <k> envv(CurEnvV) => . ... </k> <envv> _ => CurEnvV </envv>   [structural]
        rule <k> envp(CurEnvP) => . ... </k> <envp> _ => CurEnvP </envp>   [structural]
+
+       // call rec
+       rule <k> call P:Id => PTup ... </k>
+            <envp> ... P |-> PTup ... </envp>  [structural]
+       rule <k> ptuple(P, S, EnvV, EnvP) => S ~> envv(CurEnvV) ~> envp(CurEnvP) ... </k>
+            <envv> CurEnvV:Map => EnvV </envv>
+            <envp> CurEnvP:Map => EnvP[P <- ptuple(P, S, EnvV, EnvP)] </envp>  [structural]
 
        rule S1:Stmt ; S2:Stmt => S1 ~> S2   [structural]
 
 
        // vardecl
        rule D:VarDecl Ds:Dv => D ~> Ds    [structural]
-       rule .Dv => .                        [structural]
+       rule .Dv => .                      [structural]
 
        rule <k> var X := I:Int ; => . ... </k>
             <envv> M:Map => M[X <- Loc] </envv>
             <store> Sto:Map => Sto (Loc |-> I) </store>
             <nextLoc> Loc:Int => (Loc +Int 1) </nextLoc>
+
+
+       // procdecl
+       rule P:ProcDecl Ps:Dp => P ~> Ps     [structural]
+       rule .Dp => .                        [structural]
+
+       syntax KItem ::= ptuple(K, Stmt, Map, Map)
+       rule <k> proc P is S:Stmt ; => . ... </k>
+            <envv> EnvV:Map </envv>
+            <envp> EnvP:Map => EnvP[P <- ptuple(P, S, EnvV, EnvP)] </envp>
 endmodule

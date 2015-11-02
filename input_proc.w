@@ -6,4 +6,9 @@ begin
   var xx := x * 10;
   y := x;
   skip
+end;
+
+begin
+  proc p is z := 0;
+  skip
 end
