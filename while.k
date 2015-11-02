@@ -15,9 +15,13 @@ module WHILE-SYNTAX
        syntax Stmt ::= "skip"
                      | "if" BExp "then" Stmt "else" Stmt  [strict(1)]
                      | "while" BExp "do" Stmt
+                     | "begin" Dv Stmt "end"
                      | Id ":=" AExp     [strict(2)]
                      > Stmt ";" Stmt    [left, seqstrict]
                      > "(" Stmt ")"     [bracket]
+
+       syntax VarDecl ::= "var" Id ":=" AExp ";"    [strict(2)]
+       syntax Dv ::= List{VarDecl, ""}
 endmodule
 
 module WHILE
@@ -30,16 +34,17 @@ module WHILE
        configuration <T>
            <k color="green"> $PGM:Stmt </k>
 
-           <env color="blue"> .Map </env>
+           <envv color="blue"> .Map </envv>
            <store color="red"> .Map </store>
 
+           <envp color="yellow"> .Map </envp>
            <nextLoc color="gray"> 0 </nextLoc>
        </T>
 
 
        // AExp
        rule <k> X:Id => I ... </k>
-            <env>... X |-> N ...</env>
+            <envv>... X |-> N ...</envv>
             <store>... N |-> I ...</store>
 
        rule A1 * A2 => A1 *Int A2
@@ -54,14 +59,14 @@ module WHILE
 
        // Stmt
        rule <k> (X := I:Int) => . ... </k>
-            <env>... X |-> N ...</env>
-            <store>... N |-> (_ => I) ...</store> [assignment]
+            <envv>... X |-> Loc ...</envv>
+            <store>... Loc |-> (_ => I) ...</store>     [assignment]    // update
 
        rule <k> (X := I:Int) => . ... </k>
-            <env> M:Map => M (X |-> N) </env>
-            <store> Sto:Map => Sto (N |-> I) </store>
-            <nextLoc> N:Int => (N +Int 1) </nextLoc>
-         when notBool(X in keys(M)) [assignment]
+            <envv> M:Map => M (X |-> Loc) </envv>
+            <store> Sto:Map => Sto (Loc |-> I) </store>
+            <nextLoc> Loc:Int => (Loc +Int 1) </nextLoc>
+         when notBool(X in keys(M)) [assignment]    // init
 
        rule skip => .
 
@@ -70,5 +75,22 @@ module WHILE
 
        rule while B:BExp do S:Stmt => if B then (S; while B do S) else skip      [structural]
 
-       rule S1:Stmt ; S2:Stmt => S1 ~> S2   [structual]
+       syntax Stmt ::= envv(K) | envp(K)
+       rule <k> begin Ds S:Stmt end => Ds ~> S ~> envv(CurEnvV) ~> envp(CurEnvP) ... </k>
+            <envv> CurEnvV:Map </envv>
+            <envp> CurEnvP:Map </envp>  [structural]
+       rule <k> envv(CurEnvV) => . ... </k> <envv> _ => CurEnvV </envv>   [structural]
+       rule <k> envp(CurEnvP) => . ... </k> <envp> _ => CurEnvP </envp>   [structural]
+
+       rule S1:Stmt ; S2:Stmt => S1 ~> S2   [structural]
+
+
+       // vardecl
+       rule D:VarDecl Ds:Dv => D ~> Ds    [structural]
+       rule .Dv => .                        [structural]
+
+       rule <k> var X := I:Int ; => . ... </k>
+            <envv> M:Map => M[X <- Loc] </envv>
+            <store> Sto:Map => Sto (Loc |-> I) </store>
+            <nextLoc> Loc:Int => (Loc +Int 1) </nextLoc>
 endmodule
